@@ -239,7 +239,7 @@ def test_missing_init_py_error(
         ):
             hydra = GlobalHydra.instance().hydra
             assert hydra is not None
-            hydra.compose_config(config_name=None, overrides=[])
+            hydra.compose_config(config_name="test.yaml", overrides=[])
 
 
 def test_initialize_with_file(restore_singletons: Any) -> None:
