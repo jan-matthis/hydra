@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-from hydra.core.config_loader import ConfigLoader
 from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
@@ -23,10 +22,7 @@ log = logging.getLogger(__name__)
 
 
 def execute_job(
-    idx: int,
-    overrides: Sequence[str],
-    config_loader: ConfigLoader,
-    config: DictConfig,
+    sweep_config: DictConfig,
     task_function: TaskFunction,
     singleton_state: Dict[Any, Any],
 ) -> JobReturn:
@@ -35,10 +31,6 @@ def execute_job(
     setup_globals()
     Singleton.set_state(singleton_state)
 
-    sweep_config = config_loader.load_sweep_config(config, list(overrides))
-    with open_dict(sweep_config):
-        sweep_config.hydra.job.id = "{}_{}".format(sweep_config.hydra.job.name, idx)
-        sweep_config.hydra.job.num = idx
     HydraConfig.instance().set_config(sweep_config)
 
     ret = run_job(
@@ -86,16 +78,20 @@ def launch(
 
     singleton_state = Singleton.get_state()
 
-    runs = Parallel(**joblib_cfg)(
-        delayed(execute_job)(
-            initial_job_idx + idx,
-            overrides,
-            launcher.config_loader,
-            launcher.config,
-            launcher.task_function,
-            singleton_state,
+    sweep_configs = []
+    for idx, overrides in enumerate(job_overrides):
+        sweep_config = launcher.config_loader.load_sweep_config(
+            launcher.config, list(overrides)
         )
-        for idx, overrides in enumerate(job_overrides)
+        idx = initial_job_idx + idx
+        with open_dict(sweep_config):
+            sweep_config.hydra.job.id = "{}_{}".format(sweep_config.hydra.job.name, idx)
+            sweep_config.hydra.job.num = idx
+        sweep_configs.append(sweep_config)
+
+    runs = Parallel(**joblib_cfg)(
+        delayed(execute_job)(sweep_config, launcher.task_function, singleton_state,)
+        for sweep_config in sweep_configs
     )
 
     assert isinstance(runs, List)
